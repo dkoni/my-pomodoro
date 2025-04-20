@@ -1,11 +1,11 @@
-import { useState, useEffect } from 'react';
-import { FaPlay, FaPause,FaFastForward } from 'react-icons/fa';
+import { useState, useEffect, useCallback } from 'react'; // 重複を削除し、useCallbackを追加
+import { FaPlay, FaPause, FaFastForward } from 'react-icons/fa';
 import { FiRotateCcw, FiSettings } from 'react-icons/fi';
 import { Timer } from './components/Timer';
-import { MusicPlayer } from './components/MusicPlayer';
+import { MusicPlayer, MusicSetting } from './components/MusicPlayer'; // MusicSetting 型をインポート
 import { SettingsModal } from './components/SettingsModal';
 
-// テーマ名とプレビュー色のマッピング (主要な色を定義)
+// テーマ名とプレビュー色のマッピング (変更なし)
 // 参考: https://github.com/saadeghi/daisyui/blob/master/src/theming/themes.js
 // 全てのテーマを定義するのは大変なので、一部のみ定義します。
 const themePreviews = [
@@ -40,19 +40,36 @@ const themePreviews = [
   { name: "winter", p: "#047aff", s: "#463aa1", a: "#c149ad", n: "#1e293b", b100: "#ffffff" },
 ];
 
+// デフォルトの音楽設定
+const defaultFocusMusicSetting: MusicSetting = { type: 'default', url: '/sounds/lofi.mp3', volume: 50 };
+const defaultBreakMusicSetting: MusicSetting = { type: 'default', url: '/sounds/nature.mp3', volume: 50 };
+
 export const App = () => {
+  // --- State ---
   const [mode, setMode] = useState<'work' | 'shortBreak' | 'longBreak'>('work');
-  const [timeLeft, setTimeLeft] = useState(25 * 60);
+  const [timeLeft, setTimeLeft] = useState(25 * 60); // 初期値は workMinutes に依存させる
   const [isRunning, setIsRunning] = useState(false);
-  const [isMuted, setIsMuted] = useState(false);
+  // isMuted は MusicPlayer 内部で管理するため削除
   const [pomodoroCount, setPomodoroCount] = useState(0);
   const [showSettings, setShowSettings] = useState(false);
 
-  const [workMinutes, setWorkMinutes] = useState(25);
-  const [shortBreakMinutes, setShortBreakMinutes] = useState(5);
-  const [longBreakMinutes, setLongBreakMinutes] = useState(15);
-  const [longBreakInterval, setLongBreakInterval] = useState(4);
+  // タイマー設定 (localStorageから読み込むように変更)
+  const [workMinutes, setWorkMinutes] = useState(() => Number(localStorage.getItem('workMinutes') || 25));
+  const [shortBreakMinutes, setShortBreakMinutes] = useState(() => Number(localStorage.getItem('shortBreakMinutes') || 5));
+  const [longBreakMinutes, setLongBreakMinutes] = useState(() => Number(localStorage.getItem('longBreakMinutes') || 15));
+  const [longBreakInterval, setLongBreakInterval] = useState(() => Number(localStorage.getItem('longBreakInterval') || 4));
 
+  // 音楽設定 (localStorageから読み込む)
+  const [focusMusic, setFocusMusic] = useState<MusicSetting>(() => {
+    const saved = localStorage.getItem('focusMusic');
+    return saved ? JSON.parse(saved) : defaultFocusMusicSetting;
+  });
+  const [breakMusic, setBreakMusic] = useState<MusicSetting>(() => {
+    const saved = localStorage.getItem('breakMusic');
+    return saved ? JSON.parse(saved) : defaultBreakMusicSetting;
+  });
+
+  // テーマ設定 (変更なし)
   const [currentTheme, setCurrentTheme] = useState(() => {
     if (typeof window !== 'undefined') {
       return localStorage.getItem('theme') || 'light';
@@ -60,26 +77,66 @@ export const App = () => {
     return 'light';
   });
 
-  const modes = {
-    work: { label: 'Focus', duration: workMinutes * 60 },
-    shortBreak: { label: 'Short Break', duration: shortBreakMinutes * 60 },
-    longBreak: { label: 'Long Break', duration: longBreakMinutes * 60 },
+  // --- Derived State & Constants ---
+  const getModeDuration = (mode: 'work' | 'shortBreak' | 'longBreak') => {
+    switch(mode) {
+      case 'work': return workMinutes * 60;
+      case 'shortBreak': return shortBreakMinutes * 60;
+      case 'longBreak': return longBreakMinutes * 60;
+      default: return workMinutes * 60;
+    }
   };
+
+  const modes = {
+    work: { label: 'Focus', duration: getModeDuration('work') },
+    shortBreak: { label: 'Short Break', duration: getModeDuration('shortBreak') },
+    longBreak: { label: 'Long Break', duration: getModeDuration('longBreak') },
+  };
+
+  // 休憩時間が作業時間以上にならないようにバリデーション
+  useEffect(() => {
+    if (shortBreakMinutes >= workMinutes) {
+      setShortBreakMinutes(Math.min(5, workMinutes - 1));
+    }
+    if (longBreakMinutes >= workMinutes) {
+      setLongBreakMinutes(Math.min(15, workMinutes - 1));
+    }
+  }, [workMinutes, shortBreakMinutes, longBreakMinutes]);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', currentTheme);
     localStorage.setItem('theme', currentTheme);
   }, [currentTheme]);
 
+  // --- Handlers --- (useEffectより前に移動)
+  // 自動モード切り替え (useCallbackでラップ)
+  const handleAutoSwitch = useCallback(() => {
+    if (mode === 'work') {
+      const newCount = pomodoroCount + 1;
+      setPomodoroCount(newCount);
+      const nextMode = newCount % longBreakInterval === 0 ? 'longBreak' : 'shortBreak';
+      setMode(nextMode);
+      setTimeLeft(modes[nextMode].duration); // 新しいモードの時間を設定
+    } else {
+      setMode('work');
+      setTimeLeft(modes.work.duration); // workモードの時間を設定
+    }
+    setIsRunning(false); // 自動切り替え時はタイマー停止
+  }, [mode, pomodoroCount, longBreakInterval, modes]); // modesを依存関係に追加
+
   useEffect(() => {
+    // タイトル更新 (変更なし)
     document.title = `${Math.floor(timeLeft / 60)}:${String(timeLeft % 60).padStart(2, '0')} - Pomodoro Timer`;
   }, [timeLeft]);
 
   useEffect(() => {
+    // タイマー実行ロジック (変更なし、handleAutoSwitchが上で定義されたのでOK)
     if (!isRunning) return;
     const interval = setInterval(() => {
       setTimeLeft(prev => {
         if (prev <= 1) {
+          // TODO: 通知音を鳴らす (例: new Audio('/sounds/notification.mp3').play();)
+          console.log("Timer finished!");
           setIsRunning(false);
           handleAutoSwitch();
           return 0;
@@ -88,59 +145,53 @@ export const App = () => {
       });
     }, 1000);
     return () => clearInterval(interval);
-  }, [isRunning]);
+  }, [isRunning, handleAutoSwitch]); // handleAutoSwitch を依存配列に追加
 
-  const handleAutoSwitch = () => {
-    if (mode === 'work') {
-      const newCount = pomodoroCount + 1;
-      setPomodoroCount(newCount);
-      if (newCount % longBreakInterval === 0) {
-        setMode('longBreak');
-        setTimeLeft(longBreakMinutes * 60);
-      } else {
-        setMode('shortBreak');
-        setTimeLeft(shortBreakMinutes * 60);
-      }
-    } else {
-      setMode('work');
-      setTimeLeft(workMinutes * 60);
-    }
-  };
-
+  // 手動モード切り替え (変更なし)
   const handleModeChange = (newMode: 'work' | 'shortBreak' | 'longBreak') => {
     setMode(newMode);
-    setTimeLeft(modes[newMode].duration);
+    // setTimeLeft は useEffect で更新される
     setIsRunning(false);
   };
 
-  const handleSaveSettings = ({
-    workMinutes,
-    shortBreakMinutes,
-    longBreakMinutes,
-    longBreakInterval,
-  }: {
+  // 設定保存ハンドラ (音楽設定も受け取るように変更)
+  const handleSaveSettings = (settings: {
     workMinutes: number;
     shortBreakMinutes: number;
     longBreakMinutes: number;
     longBreakInterval: number;
+    focusMusic: MusicSetting; // 追加
+    breakMusic: MusicSetting; // 追加
   }) => {
-    setWorkMinutes(workMinutes);
-    setShortBreakMinutes(shortBreakMinutes);
-    setLongBreakMinutes(longBreakMinutes);
-    setLongBreakInterval(longBreakInterval);
-    // 時間を再設定（現在のモードに基づく）
-    setTimeLeft(modes[mode].duration);
+    setWorkMinutes(settings.workMinutes);
+    setShortBreakMinutes(settings.shortBreakMinutes);
+    setLongBreakMinutes(settings.longBreakMinutes);
+    setLongBreakInterval(settings.longBreakInterval);
+    setFocusMusic(settings.focusMusic); // 音楽設定を更新
+    setBreakMusic(settings.breakMusic); // 音楽設定を更新
+    // setTimeLeft は useEffect で更新される
+    setShowSettings(false); // モーダルを閉じる
   };
 
+  // MusicPlayerからの変更を受け取るハンドラ
+  const handleFocusMusicChange = useCallback((setting: MusicSetting) => {
+    setFocusMusic(setting);
+  }, []);
+
+  const handleBreakMusicChange = useCallback((setting: MusicSetting) => {
+    setBreakMusic(setting);
+  }, []);
+
+  // --- Render ---
   return (
     <div className="min-h-screen bg-base-200">
       <div className="container mx-auto px-4 py-8 max-w-2xl">
 
-        {/* ナビゲーションバー */}
+        {/* ナビゲーションバー (変更なし) */}
         <div className="navbar bg-base-100 rounded-box shadow-lg mb-8">
           <div className="flex-1 flex items-center">
-            <img src="public/favicon.svg" alt="logo" className='w-5 h-5 cursor-pointer' onClick={() => window.location.reload()} />
-            <span className="px-2 text-xl cursor-pointer" onClick={() => window.location.reload()}>Pomodoro Method Timer</span>
+            <img src="/favicon.svg" alt="logo" className='w-5 h-5 cursor-pointer' onClick={() => window.location.reload()} /> {/* public/ を削除 */}
+            <span className="px-2 text-xl cursor-pointer" onClick={() => window.location.reload()}>Pomodoro Timer</span> {/* Method を削除 */}
           </div>
           <div className="flex-none">
             <button onClick={() => setShowSettings(true)} className="btn btn-ghost btn-circle" title="Settings">
@@ -149,7 +200,7 @@ export const App = () => {
           </div>
         </div>
 
-        {/* タイマーカード */}
+        {/* タイマーカード (変更なし) */}
         <div className="card bg-base-100 shadow-xl p-8 mb-8">
           <div className="flex flex-wrap justify-center gap-2 mb-8">
             {Object.entries(modes).map(([key, value]) => (
@@ -174,29 +225,41 @@ export const App = () => {
             </button>
             <button
               onClick={() => {
-                setTimeLeft(modes[mode].duration);
-                setIsRunning(false);
+                // リセットボタン
+                setTimeLeft(modes[mode].duration); // 時間をリセット
+                setIsRunning(false); // タイマー停止
               }}
               className="btn btn-circle btn-lg btn-outline"
+              title="Reset Timer"
             >
               <FiRotateCcw size={24} />
             </button>
             <button
               onClick={() => {
-                handleAutoSwitch();
-                setIsRunning(false);
+                // スキップボタン
+                handleAutoSwitch(); // 次のモードへ
+                // setIsRunning(false); // handleAutoSwitch内で実行される
               }}
               className="btn btn-circle btn-lg btn-outline"
+              title="Skip to Next Mode"
             >
               <FaFastForward size={24} />
             </button>
           </div>
         </div>
 
-        <MusicPlayer isMuted={isMuted} setIsMuted={setIsMuted} shouldPlay={isRunning} mode={mode} />
+        {/* MusicPlayer に新しい props を渡す */}
+        <MusicPlayer
+          mode={mode}
+          shouldPlay={isRunning}
+          focusMusic={focusMusic}
+          breakMusic={breakMusic}
+          onFocusMusicChange={handleFocusMusicChange}
+          onBreakMusicChange={handleBreakMusicChange}
+        />
       </div>
 
-      {/* 設定モーダル */}
+      {/* 設定モーダルに新しい props を渡す */}
       <SettingsModal
         isOpen={showSettings}
         onClose={() => setShowSettings(false)}
@@ -205,6 +268,8 @@ export const App = () => {
         shortBreakMinutes={shortBreakMinutes}
         longBreakMinutes={longBreakMinutes}
         longBreakInterval={longBreakInterval}
+        focusMusic={focusMusic}
+        breakMusic={breakMusic}
       />
     </div>
   );

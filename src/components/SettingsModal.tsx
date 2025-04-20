@@ -1,6 +1,6 @@
 // components/SettingsModal.tsx
-// components/SettingsModal.tsx
-import { useState, useEffect, useRef } from 'react'; // useEffect, useRef をインポート
+import { useState, useEffect, useRef } from 'react';
+import { MusicSetting } from './MusicPlayer'; // MusicSetting 型をインポート
 
 interface SettingsModalProps {
   isOpen: boolean; // このpropは引き続き受け取る
@@ -9,11 +9,16 @@ interface SettingsModalProps {
   shortBreakMinutes: number;
   longBreakMinutes: number;
   longBreakInterval: number;
-  onSave: (values: { // 設定を保存するための関数
-    workMinutes: number; // 作業時間（分）
-    shortBreakMinutes: number; // 短い休憩時間（分）
-    longBreakMinutes: number; // 長い休憩時間（分）
-    longBreakInterval: number; // 長い休憩までのポモドーロ回数
+  // App.tsxから音楽設定を受け取るためのpropsを追加
+  focusMusic: MusicSetting;
+  breakMusic: MusicSetting;
+  onSave: (values: { // 保存する値に音楽設定を追加
+    workMinutes: number;
+    shortBreakMinutes: number;
+    longBreakMinutes: number;
+    longBreakInterval: number;
+    focusMusic: MusicSetting; // 追加
+    breakMusic: MusicSetting; // 追加
   }) => void;
 }
 
@@ -32,13 +37,17 @@ export const SettingsModal = ({
   shortBreakMinutes: initialShort,
   longBreakMinutes: initialLong,
   longBreakInterval: initialInterval,
+  focusMusic: initialFocusMusic,
+  breakMusic: initialBreakMusic,
   onSave,
 }: SettingsModalProps) => {
-  // State管理（変更なし）
+  // State管理
   const [workMinutes, setWorkMinutes] = useState(initialWork);
   const [shortBreakMinutes, setShortBreakMinutes] = useState(initialShort);
   const [longBreakMinutes, setLongBreakMinutes] = useState(initialLong);
   const [longBreakInterval, setLongBreakInterval] = useState(initialInterval);
+  const [focusMusic, setFocusMusic] = useState(initialFocusMusic);
+  const [breakMusic, setBreakMusic] = useState(initialBreakMusic);
   const [selectedTheme, setSelectedTheme] = useState<string>(() => {
     // クライアントサイドでのみlocalStorage/documentElementにアクセス
     if (typeof window !== 'undefined') {
@@ -68,7 +77,14 @@ export const SettingsModal = ({
       document.documentElement.setAttribute('data-theme', selectedTheme);
       localStorage.setItem('theme', selectedTheme);
     }
-    onSave({ workMinutes, shortBreakMinutes, longBreakMinutes, longBreakInterval });
+    onSave({ 
+      workMinutes, 
+      shortBreakMinutes, 
+      longBreakMinutes, 
+      longBreakInterval,
+      focusMusic, // 音楽設定を追加
+      breakMusic  // 音楽設定を追加
+    });
     // onClose(); // close()メソッドで閉じるので不要になる場合があるが、念のため残す
   };
 
@@ -153,6 +169,43 @@ export const SettingsModal = ({
               <option key={theme} value={theme}>{theme.charAt(0).toUpperCase() + theme.slice(1)}</option>
             ))}
           </select>
+        </div>
+
+        {/* 音楽設定セクションを追加 */}
+        <div className="form-control mb-4">
+          <label className="label">
+            <span className="label-text">Focus Music Volume</span>
+            <span className="label-text-alt">{focusMusic.volume}%</span>
+          </label>
+          <input
+            type="range"
+            min="0"
+            max="100"
+            value={focusMusic.volume}
+            onChange={(e) => {
+              const newVolume = Number(e.target.value);
+              setFocusMusic({...focusMusic, volume: newVolume});
+            }}
+            className="range range-primary range-sm"
+          />
+        </div>
+
+        <div className="form-control mb-4">
+          <label className="label">
+            <span className="label-text">Break Music Volume</span>
+            <span className="label-text-alt">{breakMusic.volume}%</span>
+          </label>
+          <input
+            type="range"
+            min="0"
+            max="100"
+            value={breakMusic.volume}
+            onChange={(e) => {
+              const newVolume = Number(e.target.value);
+              setBreakMusic({...breakMusic, volume: newVolume});
+            }}
+            className="range range-primary range-sm"
+          />
         </div>
 
         {/* モーダルアクションボタン */}
