@@ -1,42 +1,34 @@
 import React, { useState, useEffect, useRef } from 'react';
-import YouTube from 'react-youtube';
-import { FiMusic, FiVolume2, FiVolumeX, FiYoutube, FiDisc } from 'react-icons/fi'; // アイコン追加
+import YouTube, { YouTubeEvent, YouTubeProps } from 'react-youtube';
+import { FiMusic, FiVolume2, FiVolumeX, FiYoutube, FiDisc } from 'react-icons/fi';
+import ErrorBoundary from './ErrorBoundary';
 
-// 音楽設定の型
 export interface MusicSetting {
   type: 'default' | 'youtube';
-  url: string; // defaultの場合はファイルパス、youtubeの場合はYouTube URL
-  volume: number; // 0 to 100
+  url: string;
+  volume: number;
 }
 
-// 親コンポーネントから受け取るprops
 interface MusicPlayerProps {
-  mode: 'work' | 'shortBreak' | 'longBreak'; // 現在のタイマーモード
-  shouldPlay: boolean; // 再生すべきかどうかのフラグ
-  focusMusic: MusicSetting; // 作業中の音楽設定
-  breakMusic: MusicSetting; // 休憩中の音楽設定
-  onFocusMusicChange: (setting: MusicSetting) => void; // 作業中音楽設定の更新関数
-  onBreakMusicChange: (setting: MusicSetting) => void; // 休憩中音楽設定の更新関数
+  mode: 'work' | 'shortBreak' | 'longBreak';
+  shouldPlay: boolean;
+  focusMusic: MusicSetting;
+  breakMusic: MusicSetting;
+  onFocusMusicChange: (setting: MusicSetting) => void;
+  onBreakMusicChange: (setting: MusicSetting) => void;
 }
 
-// YouTube URLからVideo IDを抽出するヘルパー関数
 const getYouTubeVideoId = (url: string): string | null => {
   try {
     const urlObj = new URL(url);
-    if (urlObj.hostname === 'youtu.be') {
-      return urlObj.pathname.slice(1);
-    }
-    if (urlObj.hostname.includes('youtube.com')) {
-      return urlObj.searchParams.get('v');
-    }
+    if (urlObj.hostname === 'youtu.be') return urlObj.pathname.slice(1);
+    if (urlObj.hostname.includes('youtube.com')) return urlObj.searchParams.get('v');
   } catch (e) {
-    // 無効なURLの場合
     console.error("Invalid YouTube URL:", url, e);
   }
   return null;
 };
 
-// デフォルト音源のパス（仮） - 必要に応じてApp.tsxから渡すように変更も可能
 const defaultFocusSound = '/sounds/lofi.mp3';
 const defaultBreakSound = '/sounds/nature.mp3';
 
@@ -48,147 +40,156 @@ export const MusicPlayer: React.FC<MusicPlayerProps> = ({
   onFocusMusicChange,
   onBreakMusicChange,
 }) => {
-  // 現在のモードに応じた音楽設定と更新関数を選択
   const isWorkMode = mode === 'work';
   const currentMusicSetting = isWorkMode ? focusMusic : breakMusic;
   const onCurrentMusicChange = isWorkMode ? onFocusMusicChange : onBreakMusicChange;
 
-  // ローカルステートでUIを管理（propsの値を初期値とする）
   const [musicType, setMusicType] = useState(currentMusicSetting.type);
   const [youtubeUrl, setYoutubeUrl] = useState(currentMusicSetting.type === 'youtube' ? currentMusicSetting.url : '');
   const [volume, setVolume] = useState(currentMusicSetting.volume);
-  const [isMuted, setIsMuted] = useState(false); // ミュート状態
+  const [isMuted, setIsMuted] = useState(false);
+  const [playerReady, setPlayerReady] = useState(false);
 
-  // YouTubeプレイヤーの参照
-  const playerRef = useRef<any>(null); // react-youtubeの型定義が完全でないためanyを使用
-  // Audio要素の参照
+  const playerRef = useRef<YouTube | null>(null);
+  const playerInstanceRef = useRef<{
+    playVideo: () => void;
+    pauseVideo: () => void;
+    setVolume: (volume: number) => void;
+    destroy: () => void;
+    mute: () => void;
+  } | null>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
 
-  // 現在再生中のYouTube Video ID
   const currentVideoId = musicType === 'youtube' ? getYouTubeVideoId(youtubeUrl) : null;
-  // 現在再生中のデフォルト音源パス
   const currentDefaultAudioSrc = isWorkMode ? defaultFocusSound : defaultBreakSound;
 
-  // モードが変更されたら、UIの表示を現在の設定に合わせる
+  // プレイヤーのクリーンアップ
+  const cleanupPlayer = () => {
+    if (playerInstanceRef.current) {
+      try {
+        playerInstanceRef.current.destroy();
+      } catch (err) {
+        console.error('Failed to destroy player:', err);
+      }
+      playerInstanceRef.current = null;
+      setPlayerReady(false);
+    }
+  };
+
+  // URL変更時にプレイヤーをリセット
+  useEffect(() => {
+    return cleanupPlayer;
+  }, [currentVideoId]);
+
+  // モード変更時の処理
   useEffect(() => {
     setMusicType(currentMusicSetting.type);
     setYoutubeUrl(currentMusicSetting.type === 'youtube' ? currentMusicSetting.url : '');
     setVolume(currentMusicSetting.volume);
-    
-    // localStorageに保存
-    if (currentMusicSetting.type === 'youtube' && currentMusicSetting.url) {
-      localStorage.setItem(
-        isWorkMode ? 'focusMusicUrl' : 'breakMusicUrl',
-        currentMusicSetting.url
-      );
-    }
-  }, [currentMusicSetting, isWorkMode]);
+  }, [currentMusicSetting]);
 
-  // 初期化時にlocalStorageからURLを読み込む
+  // 再生/停止制御
   useEffect(() => {
-    const savedUrl = localStorage.getItem(
-      isWorkMode ? 'focusMusicUrl' : 'breakMusicUrl'
-    );
-    if (savedUrl && musicType === 'youtube') {
-      setYoutubeUrl(savedUrl);
-      onCurrentMusicChange({ ...currentMusicSetting, url: savedUrl });
-    }
-  }, [isWorkMode]);
-
-  // 再生/停止の制御
-  useEffect(() => {
-    // YouTube Player
-    const ytPlayer = playerRef.current;
-    if (musicType === 'youtube' && ytPlayer && currentVideoId) {
-      if (shouldPlay && !isMuted) {
-        ytPlayer.playVideo();
-      } else {
-        ytPlayer.pauseVideo();
+    if (musicType === 'youtube' && playerRef.current?.internalPlayer && playerReady) {
+      try {
+        if (shouldPlay && !isMuted) {
+          playerRef.current.internalPlayer.playVideo();
+        } else {
+          playerRef.current.internalPlayer.pauseVideo();
+        }
+      } catch (err) {
+        console.error('Playback control error:', err);
       }
     }
 
-    // Default Audio Player
-    const audioElement = audioRef.current;
-    if (musicType === 'default' && audioElement) {
+    if (musicType === 'default' && audioRef.current) {
       if (shouldPlay && !isMuted) {
-        audioElement.play().catch((err) => console.warn('Autoplay blocked:', err));
+        audioRef.current.play().catch((err: Error) => console.warn('Autoplay blocked:', err));
       } else {
-        audioElement.pause();
+        audioRef.current.pause();
       }
     }
-  }, [shouldPlay, isMuted, musicType, currentVideoId]); // currentVideoIdも依存配列に追加
+  }, [shouldPlay, isMuted, musicType, currentVideoId, playerReady]);
 
   // 音量制御
   useEffect(() => {
-    // YouTube Player
-    const ytPlayer = playerRef.current;
-    if (musicType === 'youtube' && ytPlayer) {
-      ytPlayer.setVolume(isMuted ? 0 : volume);
+    if (musicType === 'youtube' && playerRef.current?.internalPlayer && playerReady) {
+      try {
+        playerRef.current.internalPlayer.setVolume(isMuted ? 0 : volume);
+      } catch (err) {
+        console.error('Volume control error:', err);
+      }
     }
 
-    // Default Audio Player
-    const audioElement = audioRef.current;
-    if (musicType === 'default' && audioElement) {
-      audioElement.volume = isMuted ? 0 : volume / 100; // HTML Audioは0-1の範囲
+    if (musicType === 'default' && audioRef.current) {
+      audioRef.current.volume = isMuted ? 0 : volume / 100;
     }
-  }, [volume, isMuted, musicType]);
+  }, [volume, isMuted, musicType, playerReady]);
 
-  // --- UIイベントハンドラ ---
-
-  // 音源タイプ変更
-  const handleTypeChange = (newType: 'default' | 'youtube') => {
-    setMusicType(newType);
-    // 親コンポーネントに変更を通知
-    onCurrentMusicChange({
-      ...currentMusicSetting,
-      type: newType,
-      // URLはYouTube選択時のみ保持、Default選択時はクリアしても良いかも
-      url: newType === 'youtube' ? youtubeUrl : '',
-    });
-    // タイプ変更時に再生を一旦停止
-    playerRef.current?.pauseVideo();
-    audioRef.current?.pause();
+  // プレイヤー準備完了
+  const onPlayerReady = (event: YouTubeEvent) => {
+    try {
+      playerInstanceRef.current = {
+        playVideo: () => event.target.playVideo(),
+        pauseVideo: () => event.target.pauseVideo(),
+        setVolume: (vol: number) => event.target.setVolume(vol),
+        destroy: () => event.target.destroy(),
+        mute: () => event.target.mute()
+      };
+      
+      event.target.setVolume(isMuted ? 0 : volume);
+      setPlayerReady(true);
+      
+      if (shouldPlay && !isMuted) {
+        event.target.playVideo().catch((err: Error) => {
+          console.error('Play failed, trying muted:', err);
+          event.target.mute();
+          event.target.playVideo();
+        });
+      }
+    } catch (err) {
+      console.error('Player ready error:', err);
+      setPlayerReady(false);
+    }
   };
 
-  // YouTube URL変更
+  // プレイヤーエラー処理
+  const onPlayerError = (event: YouTubeEvent) => {
+    console.error('YouTube Player Error:', event.data);
+    cleanupPlayer();
+    // デフォルト音源にフォールバック
+    setMusicType('default');
+    onCurrentMusicChange({
+      ...currentMusicSetting,
+      type: 'default',
+      url: currentDefaultAudioSrc
+    });
+  };
+
+  // URL変更処理
   const handleUrlChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newUrl = e.target.value;
     setYoutubeUrl(newUrl);
-    // 即時反映せず、フォーカスが外れた時やEnterキーで保存する方が良いかも？
-    // ここでは簡単のため即時反映
+    cleanupPlayer();
     onCurrentMusicChange({ ...currentMusicSetting, type: 'youtube', url: newUrl });
   };
 
-  // 音量変更
+  // その他のハンドラ...
+  const handleTypeChange = (newType: 'default' | 'youtube') => {
+    setMusicType(newType);
+    const newUrl = newType === 'youtube' ? youtubeUrl : currentDefaultAudioSrc;
+    onCurrentMusicChange({ ...currentMusicSetting, type: newType, url: newUrl });
+    cleanupPlayer();
+    audioRef.current?.pause();
+  };
+
   const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newVolume = Number(e.target.value);
     setVolume(newVolume);
     onCurrentMusicChange({ ...currentMusicSetting, volume: newVolume });
   };
 
-  // ミュート切り替え
-  const toggleMute = () => {
-    setIsMuted(!isMuted);
-    // ミュート状態は永続化せず、このコンポーネント内でのみ管理
-  };
-
-  // YouTube Playerの準備完了時
-  const onPlayerReady = (event: any) => {
-    playerRef.current = event.target;
-    // 初期音量を設定
-    playerRef.current.setVolume(isMuted ? 0 : volume);
-    // 再生状態を反映
-    if (shouldPlay && !isMuted) {
-      playerRef.current.playVideo();
-    }
-  };
-
-  // YouTube Playerのエラーハンドリング
-  const onPlayerError = (event: any) => {
-    console.error('YouTube Player Error:', event.data);
-    // エラー発生時（例：動画が見つからない）にデフォルトに戻すなどの処理も可能
-  };
-
+  const toggleMute = () => setIsMuted(!isMuted);
 
   return (
     <div className="card bg-base-100 shadow-xl">
@@ -268,24 +269,25 @@ export const MusicPlayer: React.FC<MusicPlayerProps> = ({
                 }
               }}
             />
-            {/* YouTube Player (非表示で埋め込む) */}
+            {/* YouTube Player部分 */}
             {currentVideoId && (
               <div className="mt-2" style={{ height: 0, overflow: 'hidden' }}>
-                <YouTube
-                  videoId={currentVideoId}
-                  opts={{ 
-                    height: '0', 
-                    width: '0', 
-                    playerVars: { 
-                      autoplay: shouldPlay ? 1 : 0, 
-                      controls: 0,
-                      mute: isMuted ? 1 : 0
-                    } 
-                  }}
-                  onReady={onPlayerReady}
-                  onError={onPlayerError}
-                  key={currentVideoId}
-                />
+                <ErrorBoundary fallback={<p className="text-error text-xs">Failed to load YouTube player.</p>}>
+                  <YouTube
+                    videoId={currentVideoId}
+                    opts={{
+                      height: '0',
+                      width: '0',
+                      playerVars: {
+                        autoplay: shouldPlay ? 1 : 0,
+                        controls: 0,
+                        mute: isMuted ? 1 : 0
+                      }
+                    }}
+                    onReady={onPlayerReady}
+                    onError={onPlayerError}
+                  />
+                </ErrorBoundary>
               </div>
             )}
             {!currentVideoId && youtubeUrl && (
@@ -299,13 +301,12 @@ export const MusicPlayer: React.FC<MusicPlayerProps> = ({
 
         {/* デフォルト音源 (Default選択時のみ) */}
         {musicType === 'default' && (
-           <audio
-             ref={audioRef}
-             src={currentDefaultAudioSrc}
-             loop
-             preload="auto"
-             onVolumeChange={(e) => console.log("Audio Volume:", (e.target as HTMLAudioElement).volume)} // デバッグ用
-           />
+          <audio
+            ref={audioRef}
+            src={currentDefaultAudioSrc}
+            loop
+            preload="auto"
+          />
         )}
 
         {/* 音量スライダー */}
@@ -321,7 +322,7 @@ export const MusicPlayer: React.FC<MusicPlayerProps> = ({
             value={volume}
             onChange={handleVolumeChange}
             className="range range-primary range-sm"
-            disabled={isMuted} // ミュート中は無効化
+            disabled={isMuted}
           />
         </div>
       </div>

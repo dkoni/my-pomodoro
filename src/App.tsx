@@ -1,44 +1,41 @@
-import { useState, useEffect, useCallback } from 'react'; // 重複を削除し、useCallbackを追加
+import { useState, useEffect, useCallback } from 'react';
 import { FaPlay, FaPause, FaFastForward } from 'react-icons/fa';
 import { FiRotateCcw, FiSettings } from 'react-icons/fi';
 import { Timer } from './components/Timer';
-import { MusicPlayer, MusicSetting } from './components/MusicPlayer'; // MusicSetting 型をインポート
+import { MusicPlayer, MusicSetting } from './components/MusicPlayer';
 import { SettingsModal } from './components/SettingsModal';
 
-// テーマ名とプレビュー色のマッピング (変更なし)
-// 参考: https://github.com/saadeghi/daisyui/blob/master/src/theming/themes.js
-// 全てのテーマを定義するのは大変なので、一部のみ定義します。
-const themePreviews = [
-  { name: "light", p: "#570df8", s: "#f000b8", a: "#37cdbe", n: "#3d4451", b100: "#ffffff" },
-  { name: "dark", p: "#661ae6", s: "#d926a9", a: "#1fb2a6", n: "#191d24", b100: "#2a303c" },
-  { name: "cupcake", p: "#65c3c8", s: "#ef9fbc", a: "#eeaf3a", n: "#291334", b100: "#faf7f5" },
-  { name: "bumblebee", p: "#e0a82e", s: "#f9d72f", a: "#181830", n: "#181830", b100: "#ffffff" },
-  { name: "emerald", p: "#66cc8a", s: "#377cfb", a: "#ea5234", n: "#333c4d", b100: "#ffffff" },
-  { name: "corporate", p: "#4b6bfb", s: "#7b92b2", a: "#67cba0", n: "#181a2a", b100: "#ffffff" },
-  { name: "synthwave", p: "#e779c1", s: "#58c7f3", a: "#f3cc30", n: "#1a103d", b100: "#2d1b69" },
-  { name: "retro", p: "#ef9995", s: "#a4c15c", a: "#ffeaa5", n: "#2e282a", b100: "#e4d8b4" },
-  { name: "cyberpunk", p: "#ff7598", s: "#75d1f0", a: "#c07eec", n: "#16181d", b100: "#ffffff" },
-  { name: "valentine", p: "#e96d7b", s: "#a991f7", a: "#86efac", n: "#2a2e37", b100: "#fafafa" },
-  { name: "halloween", p: "#f28c18", s: "#6d3a9c", a: "#51a800", n: "#1b1d1d", b100: "#212121" },
-  { name: "garden", p: "#5c7f67", s: "#ecf4e7", a: "#fde68a", n: "#251f17", b100: "#e9e7e7" },
-  { name: "forest", p: "#1eb854", s: "#1fd65f", a: "#d99330", n: "#171212", b100: "#171212" }, // Note: Forest dark theme, base-100 is dark
-  { name: "aqua", p: "#09ecf3", s: "#966fb3", a: "#ffe999", n: "#345da7", b100: "#ffffff" },
-  { name: "lofi", p: "#0d0d0d", s: "#1a1a1a", a: "#262626", n: "#4d4d4d", b100: "#ffffff" }, // Simplified lofi
-  { name: "pastel", p: "#d1c1d7", s: "#f6cbd1", a: "#b4e9d6", n: "#a2a2a2", b100: "#ffffff" },
-  { name: "fantasy", p: "#6e0b75", s: "#007ebd", a: "#f87272", n: "#1f2937", b100: "#ffffff" },
-  { name: "wireframe", p: "#b8b8b8", s: "#b8b8b8", a: "#b8b8b8", n: "#b8b8b8", b100: "#ffffff" },
-  { name: "black", p: "#343232", s: "#343232", a: "#343232", n: "#000000", b100: "#000000" },
-  { name: "luxury", p: "#ffffff", s: "#152747", a: "#513448", n: "#09090b", b100: "#09090b" }, // Note: Luxury dark theme
-  { name: "dracula", p: "#ff79c6", s: "#bd93f9", a: "#ffb86c", n: "#414558", b100: "#282a36" },
-  { name: "cmyk", p: "#45aeee", s: "#e8488a", a: "#fcd12a", n: "#1a1a1a", b100: "#ffffff" },
-  { name: "autumn", p: "#8c0327", s: "#d85251", a: "#d59b6a", n: "#302121", b100: "#f1f1f1" },
-  { name: "business", p: "#1c4e80", s: "#7c909a", a: "#ea6947", n: "#202020", b100: "#ffffff" },
-  { name: "acid", p: "#ff00f4", s: "#ff7400", a: "#35ff69", n: "#161717", b100: "#fafafa" },
-  { name: "lemonade", p: "#519903", s: "#e9e92f", a: "#facc15", n: "#1f2937", b100: "#ffffff" },
-  { name: "night", p: "#3b82f6", s: "#8b5cf6", a: "#f471b5", n: "#1e293b", b100: "#0f172a" },
-  { name: "coffee", p: "#db924b", s: "#263e3f", a: "#dc2626", n: "#20161f", b100: "#2d1f21" }, // Note: Coffee dark theme
-  { name: "winter", p: "#047aff", s: "#463aa1", a: "#c149ad", n: "#1e293b", b100: "#ffffff" },
-];
+// const themePreviews = [
+//   { name: "light", p: "#570df8", s: "#f000b8", a: "#37cdbe", n: "#3d4451", b100: "#ffffff" },
+//   { name: "dark", p: "#661ae6", s: "#d926a9", a: "#1fb2a6", n: "#191d24", b100: "#2a303c" },
+//   { name: "cupcake", p: "#65c3c8", s: "#ef9fbc", a: "#eeaf3a", n: "#291334", b100: "#faf7f5" },
+//   { name: "bumblebee", p: "#e0a82e", s: "#f9d72f", a: "#181830", n: "#181830", b100: "#ffffff" },
+//   { name: "emerald", p: "#66cc8a", s: "#377cfb", a: "#ea5234", n: "#333c4d", b100: "#ffffff" },
+//   { name: "corporate", p: "#4b6bfb", s: "#7b92b2", a: "#67cba0", n: "#181a2a", b100: "#ffffff" },
+//   { name: "synthwave", p: "#e779c1", s: "#58c7f3", a: "#f3cc30", n: "#1a103d", b100: "#2d1b69" },
+//   { name: "retro", p: "#ef9995", s: "#a4c15c", a: "#ffeaa5", n: "#2e282a", b100: "#e4d8b4" },
+//   { name: "cyberpunk", p: "#ff7598", s: "#75d1f0", a: "#c07eec", n: "#16181d", b100: "#ffffff" },
+//   { name: "valentine", p: "#e96d7b", s: "#a991f7", a: "#86efac", n: "#2a2e37", b100: "#fafafa" },
+//   { name: "halloween", p: "#f28c18", s: "#6d3a9c", a: "#51a800", n: "#1b1d1d", b100: "#212121" },
+//   { name: "garden", p: "#5c7f67", s: "#ecf4e7", a: "#fde68a", n: "#251f17", b100: "#e9e7e7" },
+//   { name: "forest", p: "#1eb854", s: "#1fd65f", a: "#d99330", n: "#171212", b100: "#171212" }, // Note: Forest dark theme, base-100 is dark
+//   { name: "aqua", p: "#09ecf3", s: "#966fb3", a: "#ffe999", n: "#345da7", b100: "#ffffff" },
+//   { name: "lofi", p: "#0d0d0d", s: "#1a1a1a", a: "#262626", n: "#4d4d4d", b100: "#ffffff" }, // Simplified lofi
+//   { name: "pastel", p: "#d1c1d7", s: "#f6cbd1", a: "#b4e9d6", n: "#a2a2a2", b100: "#ffffff" },
+//   { name: "fantasy", p: "#6e0b75", s: "#007ebd", a: "#f87272", n: "#1f2937", b100: "#ffffff" },
+//   { name: "wireframe", p: "#b8b8b8", s: "#b8b8b8", a: "#b8b8b8", n: "#b8b8b8", b100: "#ffffff" },
+//   { name: "black", p: "#343232", s: "#343232", a: "#343232", n: "#000000", b100: "#000000" },
+//   { name: "luxury", p: "#ffffff", s: "#152747", a: "#513448", n: "#09090b", b100: "#09090b" }, // Note: Luxury dark theme
+//   { name: "dracula", p: "#ff79c6", s: "#bd93f9", a: "#ffb86c", n: "#414558", b100: "#282a36" },
+//   { name: "cmyk", p: "#45aeee", s: "#e8488a", a: "#fcd12a", n: "#1a1a1a", b100: "#ffffff" },
+//   { name: "autumn", p: "#8c0327", s: "#d85251", a: "#d59b6a", n: "#302121", b100: "#f1f1f1" },
+//   { name: "business", p: "#1c4e80", s: "#7c909a", a: "#ea6947", n: "#202020", b100: "#ffffff" },
+//   { name: "acid", p: "#ff00f4", s: "#ff7400", a: "#35ff69", n: "#161717", b100: "#fafafa" },
+//   { name: "lemonade", p: "#519903", s: "#e9e92f", a: "#facc15", n: "#1f2937", b100: "#ffffff" },
+//   { name: "night", p: "#3b82f6", s: "#8b5cf6", a: "#f471b5", n: "#1e293b", b100: "#0f172a" },
+//   { name: "coffee", p: "#db924b", s: "#263e3f", a: "#dc2626", n: "#20161f", b100: "#2d1f21" }, // Note: Coffee dark theme
+//   { name: "winter", p: "#047aff", s: "#463aa1", a: "#c149ad", n: "#1e293b", b100: "#ffffff" },
+// ];
 
 // デフォルトの音楽設定
 const defaultFocusMusicSetting: MusicSetting = { type: 'default', url: '/sounds/lofi.mp3', volume: 50 };
@@ -78,19 +75,19 @@ export const App = () => {
   });
 
   // --- Derived State & Constants ---
-  const getModeDuration = (mode: 'work' | 'shortBreak' | 'longBreak') => {
-    switch(mode) {
+  const getDurationForMode = useCallback((targetMode: 'work' | 'shortBreak' | 'longBreak') => {
+    switch (targetMode) {
       case 'work': return workMinutes * 60;
       case 'shortBreak': return shortBreakMinutes * 60;
       case 'longBreak': return longBreakMinutes * 60;
       default: return workMinutes * 60;
     }
-  };
+  }, [workMinutes, shortBreakMinutes, longBreakMinutes]);
 
   const modes = {
-    work: { label: 'Focus', duration: getModeDuration('work') },
-    shortBreak: { label: 'Short Break', duration: getModeDuration('shortBreak') },
-    longBreak: { label: 'Long Break', duration: getModeDuration('longBreak') },
+    work: { label: 'Focus', duration: getDurationForMode('work') },
+    shortBreak: { label: 'Short Break', duration: getDurationForMode('shortBreak') },
+    longBreak: { label: 'Long Break', duration: getDurationForMode('longBreak') },
   };
 
   // 休憩時間が作業時間以上にならないようにバリデーション
@@ -103,26 +100,34 @@ export const App = () => {
     }
   }, [workMinutes, shortBreakMinutes, longBreakMinutes]);
 
+  // モードまたは時間設定が変更されたらタイマーを更新
+  useEffect(() => {
+    setTimeLeft(getDurationForMode(mode));
+    setIsRunning(false);
+  }, [mode, workMinutes, shortBreakMinutes, longBreakMinutes, getDurationForMode]);
+
+  // --- Handlers ---
+
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', currentTheme);
     localStorage.setItem('theme', currentTheme);
   }, [currentTheme]);
 
-  // --- Handlers --- (useEffectより前に移動)
-  // 自動モード切り替え (useCallbackでラップ)
+  // --- Handlers --- (getDurationForMode moved above)
+
+  // 自動モード切り替え
   const handleAutoSwitch = useCallback(() => {
+    let nextMode: 'work' | 'shortBreak' | 'longBreak';
     if (mode === 'work') {
       const newCount = pomodoroCount + 1;
       setPomodoroCount(newCount);
-      const nextMode = newCount % longBreakInterval === 0 ? 'longBreak' : 'shortBreak';
-      setMode(nextMode);
-      setTimeLeft(modes[nextMode].duration); // 新しいモードの時間を設定
+      nextMode = newCount % longBreakInterval === 0 ? 'longBreak' : 'shortBreak';
     } else {
-      setMode('work');
-      setTimeLeft(modes.work.duration); // workモードの時間を設定
+      nextMode = 'work';
     }
-    setIsRunning(false); // 自動切り替え時はタイマー停止
-  }, [mode, pomodoroCount, longBreakInterval, modes]); // modesを依存関係に追加
+    // Only set the mode here. The useEffect above will handle setting timeLeft.
+    setMode(nextMode);
+  }, [mode, pomodoroCount, longBreakInterval]); // Removed getDurationForMode dependency
 
   useEffect(() => {
     // タイトル更新 (変更なし)
@@ -147,11 +152,10 @@ export const App = () => {
     return () => clearInterval(interval);
   }, [isRunning, handleAutoSwitch]); // handleAutoSwitch を依存配列に追加
 
-  // 手動モード切り替え (変更なし)
+  // 手動モード切り替え
   const handleModeChange = (newMode: 'work' | 'shortBreak' | 'longBreak') => {
+    // Only set the mode here. The useEffect above will handle setting timeLeft.
     setMode(newMode);
-    // setTimeLeft は useEffect で更新される
-    setIsRunning(false);
   };
 
   // 設定保存ハンドラ (音楽設定も受け取るように変更)
@@ -167,19 +171,27 @@ export const App = () => {
     setShortBreakMinutes(settings.shortBreakMinutes);
     setLongBreakMinutes(settings.longBreakMinutes);
     setLongBreakInterval(settings.longBreakInterval);
-    setFocusMusic(settings.focusMusic); // 音楽設定を更新
-    setBreakMusic(settings.breakMusic); // 音楽設定を更新
-    // setTimeLeft は useEffect で更新される
-    setShowSettings(false); // モーダルを閉じる
+    setFocusMusic(settings.focusMusic);
+    setBreakMusic(settings.breakMusic);
+    // Save all settings to localStorage
+    localStorage.setItem('workMinutes', settings.workMinutes.toString());
+    localStorage.setItem('shortBreakMinutes', settings.shortBreakMinutes.toString());
+    localStorage.setItem('longBreakMinutes', settings.longBreakMinutes.toString());
+    localStorage.setItem('longBreakInterval', settings.longBreakInterval.toString());
+    localStorage.setItem('focusMusic', JSON.stringify(settings.focusMusic));
+    localStorage.setItem('breakMusic', JSON.stringify(settings.breakMusic));
+    setShowSettings(false);
   };
 
-  // MusicPlayerからの変更を受け取るハンドラ
+  // MusicPlayerからの変更を受け取るハンドラ (localStorageへの保存を追加)
   const handleFocusMusicChange = useCallback((setting: MusicSetting) => {
     setFocusMusic(setting);
+    localStorage.setItem('focusMusic', JSON.stringify(setting)); // 保存
   }, []);
 
   const handleBreakMusicChange = useCallback((setting: MusicSetting) => {
     setBreakMusic(setting);
+    localStorage.setItem('breakMusic', JSON.stringify(setting)); // 保存
   }, []);
 
   // --- Render ---
