@@ -90,37 +90,45 @@ export const MusicPlayer: React.FC<MusicPlayerProps> = ({
 
   // 再生/停止制御
   useEffect(() => {
-    if (musicType === 'youtube' && playerRef.current?.internalPlayer && playerReady) {
+    // YouTube Player
+    if (musicType === 'youtube' && playerInstanceRef.current && playerReady) {
       try {
         if (shouldPlay && !isMuted) {
-          playerRef.current.internalPlayer.playVideo();
+          playerInstanceRef.current.playVideo();
         } else {
-          playerRef.current.internalPlayer.pauseVideo();
+          playerInstanceRef.current.pauseVideo();
         }
       } catch (err) {
         console.error('Playback control error:', err);
       }
     }
 
+    // Default Audio Player
     if (musicType === 'default' && audioRef.current) {
       if (shouldPlay && !isMuted) {
+        // srcが変更された場合、ロードし直してから再生
+        if (audioRef.current.currentSrc !== currentDefaultAudioSrc) {
+          audioRef.current.load(); // load()を呼ぶと自動で再生される場合があるため注意
+        }
         audioRef.current.play().catch((err: Error) => console.warn('Autoplay blocked:', err));
       } else {
         audioRef.current.pause();
       }
     }
-  }, [shouldPlay, isMuted, musicType, currentVideoId, playerReady]);
+  }, [shouldPlay, isMuted, musicType, currentVideoId, playerReady, currentDefaultAudioSrc]); // currentDefaultAudioSrc を依存配列に追加
 
   // 音量制御
   useEffect(() => {
-    if (musicType === 'youtube' && playerRef.current?.internalPlayer && playerReady) {
+    // YouTube Player
+    if (musicType === 'youtube' && playerInstanceRef.current && playerReady) {
       try {
-        playerRef.current.internalPlayer.setVolume(isMuted ? 0 : volume);
+        playerInstanceRef.current.setVolume(isMuted ? 0 : volume);
       } catch (err) {
         console.error('Volume control error:', err);
       }
     }
 
+    // Default Audio Player
     if (musicType === 'default' && audioRef.current) {
       audioRef.current.volume = isMuted ? 0 : volume / 100;
     }
@@ -166,21 +174,43 @@ export const MusicPlayer: React.FC<MusicPlayerProps> = ({
     });
   };
 
-  // URL変更処理
+  // URL変更処理（即時保存）
   const handleUrlChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newUrl = e.target.value;
     setYoutubeUrl(newUrl);
     cleanupPlayer();
-    onCurrentMusicChange({ ...currentMusicSetting, type: 'youtube', url: newUrl });
+    // 変更を即時保存し、音量も保持
+    onCurrentMusicChange({ 
+      ...currentMusicSetting, 
+      type: 'youtube', 
+      url: newUrl,
+      volume: volume
+    });
   };
 
   // その他のハンドラ...
   const handleTypeChange = (newType: 'default' | 'youtube') => {
+    const newUrl = newType === 'youtube' 
+      ? currentMusicSetting.url  // 保存済みURLを使用
+      : currentDefaultAudioSrc;
+
     setMusicType(newType);
-    const newUrl = newType === 'youtube' ? youtubeUrl : currentDefaultAudioSrc;
-    onCurrentMusicChange({ ...currentMusicSetting, type: newType, url: newUrl });
+    setYoutubeUrl(newType === 'youtube' ? currentMusicSetting.url : '');
+    
+    onCurrentMusicChange({ 
+      ...currentMusicSetting,
+      type: newType,
+      url: newUrl,
+      volume: volume
+    });
+
     cleanupPlayer();
-    audioRef.current?.pause();
+    
+    // デフォルトに切り替える場合のみオーディオを停止
+    if (newType === 'default') {
+      audioRef.current?.pause();
+      audioRef.current && (audioRef.current.currentTime = 0);
+    }
   };
 
   const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -303,9 +333,15 @@ export const MusicPlayer: React.FC<MusicPlayerProps> = ({
         {musicType === 'default' && (
           <audio
             ref={audioRef}
-            src={currentDefaultAudioSrc}
+            src={currentDefaultAudioSrc} // srcを動的に設定
             loop
             preload="auto"
+            // 再生可能になったら再生状態を反映 (autoplayがブロックされる場合があるため)
+            onCanPlay={() => {
+              if (shouldPlay && !isMuted && musicType === 'default') {
+                 audioRef.current?.play().catch((err: Error) => console.warn('Autoplay blocked onCanPlay:', err));
+              }
+            }}
           />
         )}
 

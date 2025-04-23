@@ -1,229 +1,522 @@
-// components/SettingsModal.tsx
-import { useState, useEffect, useRef } from 'react';
-import { MusicSetting } from './MusicPlayer'; // MusicSetting 型をインポート
+import { useState, useEffect, ChangeEvent } from 'react'; // Added ChangeEvent
+import { MusicSetting } from './MusicPlayer';
+
+interface Task { // This interface seems unused here, consider removing if not needed later
+  id: string;
+  text: string;
+  completed: boolean;
+}
 
 interface SettingsModalProps {
-  isOpen: boolean; // このpropは引き続き受け取る
-  onClose: () => void; // モーダルを閉じるための関数
-  workMinutes: number;
-  shortBreakMinutes: number;
-  longBreakMinutes: number;
-  longBreakInterval: number;
-  // App.tsxから音楽設定を受け取るためのpropsを追加
-  focusMusic: MusicSetting;
-  breakMusic: MusicSetting;
-  onSave: (values: { // 保存する値に音楽設定を追加
+  isOpen: boolean;
+  onClose: () => void;
+  onSave: (settings: {
     workMinutes: number;
     shortBreakMinutes: number;
     longBreakMinutes: number;
     longBreakInterval: number;
-    focusMusic: MusicSetting; // 追加
-    breakMusic: MusicSetting; // 追加
+    focusMusic: MusicSetting;
+    breakMusic: MusicSetting;
+    workAlarm: string; // Keep these for saving
+    shortBreakAlarm: string;
+    longBreakAlarm: string;
+    autoStartBreaks: boolean;
+    autoStartWork: boolean;
+    theme: string;
   }) => void;
+  workMinutes: number;
+  shortBreakMinutes: number;
+  longBreakMinutes: number;
+  longBreakInterval: number;
+  focusMusic: MusicSetting; // Receive initial music settings
+  breakMusic: MusicSetting;
+  workAlarm: string; // Receive initial alarm settings
+  shortBreakAlarm: string;
+  longBreakAlarm: string;
+  tickingSounds: string[]; // List of available ticking sounds
+  alarmSounds: string[]; // List of available alarm sounds
+  // Add theme prop if needed for initial state
+  currentTheme: string; // Receive current theme
 }
 
-// テーマリスト（変更なし）
+// Define sound paths relative to the public directory
+const SOUND_BASE_PATH = '/sounds/';
+const TICKING_PATH = `${SOUND_BASE_PATH}ticking/`;
+const ALARM_PATH = `${SOUND_BASE_PATH}alarm/`;
+
 const themes = [
   'light', 'dark', 'cupcake', 'bumblebee', 'emerald', 'corporate',
   'synthwave', 'retro', 'cyberpunk', 'valentine', 'halloween', 'garden',
   'forest', 'aqua', 'lofi', 'pastel', 'fantasy', 'wireframe', 'black',
-  'luxury', 'dracula', 'cmyk', 'autumn', 'business', 'acid', 'lemonade', 'night', 'coffee', 'winter'
+  'luxury', 'dracula', 'cmyk', 'autumn', 'business', 'acid', 'lemonade',
+  'night', 'coffee', 'winter'
 ];
 
 export const SettingsModal = ({
   isOpen,
   onClose,
+  onSave,
   workMinutes: initialWork,
   shortBreakMinutes: initialShort,
   longBreakMinutes: initialLong,
   longBreakInterval: initialInterval,
-  focusMusic: initialFocusMusic,
+  focusMusic: initialFocusMusic, // Use initial props
   breakMusic: initialBreakMusic,
-  onSave,
+  workAlarm: initialWorkAlarm,
+  shortBreakAlarm: initialShortBreakAlarm,
+  longBreakAlarm: initialLongBreakAlarm,
+  tickingSounds,
+  alarmSounds,
+  currentTheme // Use initial theme
 }: SettingsModalProps) => {
-  // State管理
+  const [activeTab, setActiveTab] = useState('timer');
+  // Timer State
   const [workMinutes, setWorkMinutes] = useState(initialWork);
   const [shortBreakMinutes, setShortBreakMinutes] = useState(initialShort);
   const [longBreakMinutes, setLongBreakMinutes] = useState(initialLong);
   const [longBreakInterval, setLongBreakInterval] = useState(initialInterval);
-  const [focusMusic, setFocusMusic] = useState(initialFocusMusic);
-  const [breakMusic, setBreakMusic] = useState(initialBreakMusic);
-  const [selectedTheme, setSelectedTheme] = useState<string>(() => {
-    // クライアントサイドでのみlocalStorage/documentElementにアクセス
-    if (typeof window !== 'undefined') {
-      return document.documentElement.getAttribute('data-theme') || localStorage.getItem('theme') || 'light';
-    }
-    return 'light';
-  });
+  const [autoStartBreaks, setAutoStartBreaks] = useState(() => localStorage.getItem('autoStartBreaks') === 'true'); // Load from localStorage
+  const [autoStartWork, setAutoStartWork] = useState(() => localStorage.getItem('autoStartWork') === 'true'); // Load from localStorage
 
-  // dialog要素への参照を作成
-  const modalRef = useRef<HTMLDialogElement>(null);
+  // Sound State
+  const [focusMusicSetting, setFocusMusicSetting] = useState<MusicSetting>(initialFocusMusic);
+  const [breakMusicSetting, setBreakMusicSetting] = useState<MusicSetting>(initialBreakMusic);
+  const [workAlarm, setWorkAlarm] = useState(initialWorkAlarm);
+  const [shortBreakAlarm, setShortBreakAlarm] = useState(initialShortBreakAlarm);
+  const [longBreakAlarm, setLongBreakAlarm] = useState(initialLongBreakAlarm);
 
-  // isOpen prop の変更を監視してモーダルを開閉
+  // Appearance State
+  const [selectedTheme, setSelectedTheme] = useState(currentTheme); // Initialize with current theme
+
+  // Task State (Seems unused in modal, maybe remove?)
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [newTask, setNewTask] = useState('');
+
+  // Load auto start settings from localStorage on mount
   useEffect(() => {
-    const modalElement = modalRef.current;
-    if (modalElement) {
-      if (isOpen) {
-        modalElement.showModal(); // モーダルを開く
-      } else {
-        modalElement.close(); // モーダルを閉じる
-      }
-    }
-  }, [isOpen]);
+    setAutoStartBreaks(localStorage.getItem('autoStartBreaks') === 'true');
+    setAutoStartWork(localStorage.getItem('autoStartWork') === 'true');
+    setSelectedTheme(localStorage.getItem('theme') || 'light'); // Load theme
+  }, []);
 
-  // 保存処理（変更なし）
+
   const handleSave = () => {
-    if (typeof window !== 'undefined') {
-      document.documentElement.setAttribute('data-theme', selectedTheme);
-      localStorage.setItem('theme', selectedTheme);
-    }
-    onSave({ 
-      workMinutes, 
-      shortBreakMinutes, 
-      longBreakMinutes, 
+    // Save auto start settings to localStorage
+    localStorage.setItem('autoStartBreaks', String(autoStartBreaks));
+    localStorage.setItem('autoStartWork', String(autoStartWork));
+    localStorage.setItem('theme', selectedTheme); // Save theme
+
+    onSave({
+      workMinutes,
+      shortBreakMinutes,
+      longBreakMinutes,
       longBreakInterval,
-      focusMusic, // 音楽設定を追加
-      breakMusic  // 音楽設定を追加
+      focusMusic: focusMusicSetting, // Use state for music
+      breakMusic: breakMusicSetting,
+      workAlarm, // Use state for alarms
+      shortBreakAlarm,
+      longBreakAlarm,
+      autoStartBreaks,
+      autoStartWork,
+      theme: selectedTheme
     });
-    // onClose(); // close()メソッドで閉じるので不要になる場合があるが、念のため残す
   };
 
-  // ESCキーで閉じるイベントリスナー（<dialog>がデフォルトで持つが、念のため）
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        onClose();
-      }
-    };
-    if (isOpen) {
-      window.addEventListener('keydown', handleKeyDown);
+  // --- Sound Setting Handlers ---
+  const handleMusicTypeChange = (
+    type: 'focus' | 'break',
+    e: ChangeEvent<HTMLSelectElement>
+  ) => {
+    const newType = e.target.value as 'default' | 'youtube';
+    const setter = type === 'focus' ? setFocusMusicSetting : setBreakMusicSetting;
+    setter(prev => ({ ...prev, type: newType, url: newType === 'youtube' ? '' : prev.url })); // Reset URL for YouTube initially
+  };
+
+  const handleMusicUrlChange = (
+    type: 'focus' | 'break',
+    e: ChangeEvent<HTMLInputElement | HTMLSelectElement>
+  ) => {
+    const newUrl = e.target.value;
+    const setter = type === 'focus' ? setFocusMusicSetting : setBreakMusicSetting;
+    setter(prev => ({ ...prev, url: newUrl }));
+  };
+
+  const handleVolumeChange = (
+    type: 'focus' | 'break',
+    e: ChangeEvent<HTMLInputElement>
+  ) => {
+    const newVolume = Number(e.target.value);
+    const setter = type === 'focus' ? setFocusMusicSetting : setBreakMusicSetting;
+    setter(prev => ({ ...prev, volume: newVolume }));
+  };
+
+
+  // --- Task Handlers (Seems unused, maybe remove?) ---
+  const addTask = () => {
+    if (newTask.trim()) {
+      setTasks([...tasks, {
+        id: Date.now().toString(),
+        text: newTask,
+        completed: false
+      }]);
+      setNewTask('');
     }
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [isOpen, onClose]);
+  };
 
+  const deleteTask = (id: string) => {
+    setTasks(tasks.filter(task => task.id !== id));
+  };
 
-  // if (!isOpen) return null; // <dialog>を使うので不要
+  const toggleTask = (id: string) => {
+    setTasks(tasks.map(task => 
+      task.id === id ? {...task, completed: !task.completed} : task
+    ));
+  };
 
-  // <dialog>要素を使用し、refとidを設定
+  const updateTask = (id: string, newText: string) => {
+    setTasks(tasks.map(task => 
+      task.id === id ? {...task, text: newText} : task
+    ));
+  };
+
   return (
-    <dialog id="settings_modal" className="modal" ref={modalRef} onClose={onClose}>
-      {/* modal-box は変更なし */}
-      <div className="modal-box w-full max-w-md"> {/* 背景色は<dialog>のbackdropが担当 */}
-        <form method="dialog"> {/* モーダル内の閉じるボタン用 */}
-          <button className="btn btn-sm btn-circle btn-ghost absolute right-2 top-2" onClick={onClose}>✕</button>
-        </form>
-        <h3 className="font-bold text-lg mb-4">Settings</h3>
+    <dialog open={isOpen} className="modal modal-bottom sm:modal-middle">
+      <div className="modal-box max-w-2xl p-0">
+        <div className="flex">
+          {/* タブナビゲーション */}
+          <div className="w-48 bg-base-200 p-4">
+            <ul className="menu space-y-1">
+              <li>
+                <a className={`flex items-center gap-2 ${activeTab === 'timer' ? 'active' : ''}`}
+                   onClick={() => setActiveTab('timer')}>
+                  ⏱️ Timer
+                </a>
+              </li>
+               <li>
+                <a className={`flex items-center gap-2 ${activeTab === 'sound' ? 'active' : ''}`}
+                   onClick={() => setActiveTab('sound')}>
+                  🎵 Sound
+                </a>
+              </li>
+              {/* <li> // Task tab removed for now as it seems unused in modal
+                <a className={`flex items-center gap-2 ${activeTab === 'tasks' ? 'active' : ''}`}
+                   onClick={() => setActiveTab('tasks')}>
+                  📝 Tasks
+                </a>
+              </li> */}
+              <li>
+                <a className={`flex items-center gap-2 ${activeTab === 'appearance' ? 'active' : ''}`}
+                   onClick={() => setActiveTab('appearance')}>
+                  🎨 Appearance
+                </a>
+              </li>
+            </ul>
+          </div>
 
-        {/* フォームコントロール（変更なし） */}
-        <div className="form-control mb-2">
-          <label className="label"><span className="label-text">Work Duration (minutes)</span></label>
-          <input
-            type="number"
-            className="input input-bordered w-full" // w-fullを追加
-            value={workMinutes}
-            onChange={(e) => setWorkMinutes(Math.max(1, Number(e.target.value)))} // 1未満にならないように
-          />
+          {/* コンテンツエリア */}
+          <div className="flex-1 p-6 max-h-[70vh] overflow-y-auto">
+            {/* Timer Settings */}
+            {activeTab === 'timer' && (
+              <div className="space-y-6">
+                <h3 className="text-xl font-bold mb-4">Timer Settings</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4"> {/* Adjusted grid layout */}
+                  <div className="form-control">
+                    <label className="label pb-1"> {/* Reduced bottom padding */}
+                      <span className="label-text font-medium">Work Duration</span>
+                    </label>
+                    <input
+                      type="number"
+                      min="1" // Add min value
+                      className="input input-bordered input-sm" // Smaller input
+                      value={workMinutes}
+                      onChange={(e) => setWorkMinutes(Math.max(1, Number(e.target.value)))}
+                    />
+                     <span className="text-xs text-base-content/60 pt-1">minutes</span>
+                  </div>
+                  <div className="form-control">
+                    <label className="label pb-1">
+                      <span className="label-text font-medium">Short Break</span>
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      className="input input-bordered input-sm"
+                      value={shortBreakMinutes}
+                      onChange={(e) => setShortBreakMinutes(Math.max(1, Number(e.target.value)))}
+                    />
+                     <span className="text-xs text-base-content/60 pt-1">minutes</span>
+                  </div>
+                  <div className="form-control">
+                    <label className="label pb-1">
+                      <span className="label-text font-medium">Long Break</span>
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      className="input input-bordered input-sm"
+                      value={longBreakMinutes}
+                      onChange={(e) => setLongBreakMinutes(Math.max(1, Number(e.target.value)))}
+                    />
+                     <span className="text-xs text-base-content/60 pt-1">minutes</span>
+                  </div>
+                  <div className="form-control">
+                    <label className="label pb-1">
+                      <span className="label-text font-medium">Long Break Interval</span>
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      className="input input-bordered input-sm"
+                      value={longBreakInterval}
+                      onChange={(e) => setLongBreakInterval(Math.max(1, Number(e.target.value)))}
+                    />
+                     <span className="text-xs text-base-content/60 pt-1">pomodoros</span>
+                  </div>
+                </div>
+
+                <div className="divider"></div> {/* Divider */}
+
+                <div className="space-y-3"> {/* Increased spacing */}
+                   <h4 className="font-medium mb-2">Automatic Start</h4>
+                   <label className="flex items-center gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="toggle toggle-sm"
+                      checked={autoStartBreaks}
+                      onChange={(e) => setAutoStartBreaks(e.target.checked)}
+                    />
+                    <span className="label-text">Auto Start Breaks</span>
+                  </label>
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="toggle toggle-sm"
+                      checked={autoStartWork}
+                      onChange={(e) => setAutoStartWork(e.target.checked)}
+                    />
+                    <span className="label-text">Auto Start Focus Sessions</span>
+                  </label>
+                </div>
+              </div>
+            )}
+
+            {/* Sound Settings */}
+            {activeTab === 'sound' && (
+              <div className="space-y-6">
+                <h3 className="text-xl font-bold mb-4">Sound Settings</h3>
+
+                {/* Focus Music */}
+                <div className="p-4 border rounded-lg bg-base-200/30">
+                  <h4 className="font-medium mb-3">Focus Music</h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="form-control">
+                      <label className="label pb-1"><span className="label-text">Type</span></label>
+                      <select
+                        className="select select-bordered select-sm"
+                        value={focusMusicSetting.type}
+                        onChange={(e) => handleMusicTypeChange('focus', e)}
+                      >
+                        <option value="default">Default Sound</option>
+                        <option value="youtube">YouTube URL</option>
+                      </select>
+                    </div>
+                    <div className="form-control">
+                       <label className="label pb-1">
+                         <span className="label-text">
+                           {focusMusicSetting.type === 'default' ? 'Sound' : 'YouTube URL'}
+                         </span>
+                       </label>
+                      {focusMusicSetting.type === 'default' ? (
+                        <select
+                          className="select select-bordered select-sm"
+                          value={focusMusicSetting.url}
+                          onChange={(e) => handleMusicUrlChange('focus', e)}
+                        >
+                          {tickingSounds.map(sound => (
+                            <option key={sound} value={`${TICKING_PATH}${sound}`}>{sound.replace('.mp3', '').replace(/_/g, ' ')}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input
+                          type="url"
+                          className="input input-bordered input-sm"
+                          placeholder="Enter YouTube video URL"
+                          value={focusMusicSetting.url}
+                          onChange={(e) => handleMusicUrlChange('focus', e)}
+                        />
+                      )}
+                    </div>
+                  </div>
+                   <div className="form-control mt-3">
+                      <label className="label pb-1"><span className="label-text">Volume</span></label>
+                      <input
+                        type="range"
+                        min="0"
+                        max="100"
+                        value={focusMusicSetting.volume}
+                        className="range range-primary range-xs"
+                        onChange={(e) => handleVolumeChange('focus', e)}
+                      />
+                      <div className="w-full flex justify-between text-xs px-1">
+                        <span>0</span>
+                        <span>{focusMusicSetting.volume}</span>
+                        <span>100</span>
+                      </div>
+                    </div>
+                </div>
+
+                 {/* Break Music */}
+                <div className="p-4 border rounded-lg bg-base-200/30">
+                  <h4 className="font-medium mb-3">Break Music</h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="form-control">
+                      <label className="label pb-1"><span className="label-text">Type</span></label>
+                      <select
+                        className="select select-bordered select-sm"
+                        value={breakMusicSetting.type}
+                        onChange={(e) => handleMusicTypeChange('break', e)}
+                      >
+                        <option value="default">Default Sound</option>
+                        <option value="youtube">YouTube URL</option>
+                      </select>
+                    </div>
+                    <div className="form-control">
+                       <label className="label pb-1">
+                         <span className="label-text">
+                           {breakMusicSetting.type === 'default' ? 'Sound' : 'YouTube URL'}
+                         </span>
+                       </label>
+                      {breakMusicSetting.type === 'default' ? (
+                        <select
+                          className="select select-bordered select-sm"
+                          value={breakMusicSetting.url}
+                          onChange={(e) => handleMusicUrlChange('break', e)}
+                        >
+                          {tickingSounds.map(sound => (
+                            <option key={sound} value={`${TICKING_PATH}${sound}`}>{sound.replace('.mp3', '').replace(/_/g, ' ')}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input
+                          type="url"
+                          className="input input-bordered input-sm"
+                          placeholder="Enter YouTube video URL"
+                          value={breakMusicSetting.url}
+                          onChange={(e) => handleMusicUrlChange('break', e)}
+                        />
+                      )}
+                    </div>
+                  </div>
+                   <div className="form-control mt-3">
+                      <label className="label pb-1"><span className="label-text">Volume</span></label>
+                      <input
+                        type="range"
+                        min="0"
+                        max="100"
+                        value={breakMusicSetting.volume}
+                        className="range range-secondary range-xs" // Use secondary color for break
+                        onChange={(e) => handleVolumeChange('break', e)}
+                      />
+                      <div className="w-full flex justify-between text-xs px-1">
+                        <span>0</span>
+                        <span>{breakMusicSetting.volume}</span>
+                        <span>100</span>
+                      </div>
+                    </div>
+                </div>
+
+                {/* Alarm Sounds */}
+                 <div className="p-4 border rounded-lg bg-base-200/30">
+                   <h4 className="font-medium mb-3">Alarm Sounds</h4>
+                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                     <div className="form-control">
+                       <label className="label pb-1"><span className="label-text">End of Focus</span></label>
+                       <select
+                         className="select select-bordered select-sm"
+                         value={workAlarm}
+                         onChange={(e) => setWorkAlarm(e.target.value)}
+                       >
+                         {alarmSounds.map(sound => (
+                           <option key={sound} value={`${ALARM_PATH}${sound}`}>{sound.replace(/\.(mp3|wav)$/, '').replace(/_/g, ' ')}</option>
+                         ))}
+                       </select>
+                     </div>
+                     <div className="form-control">
+                       <label className="label pb-1"><span className="label-text">End of Short Break</span></label>
+                       <select
+                         className="select select-bordered select-sm"
+                         value={shortBreakAlarm}
+                         onChange={(e) => setShortBreakAlarm(e.target.value)}
+                       >
+                         {alarmSounds.map(sound => (
+                           <option key={sound} value={`${ALARM_PATH}${sound}`}>{sound.replace(/\.(mp3|wav)$/, '').replace(/_/g, ' ')}</option>
+                         ))}
+                       </select>
+                     </div>
+                     <div className="form-control">
+                       <label className="label pb-1"><span className="label-text">End of Long Break</span></label>
+                       <select
+                         className="select select-bordered select-sm"
+                         value={longBreakAlarm}
+                         onChange={(e) => setLongBreakAlarm(e.target.value)}
+                       >
+                         {alarmSounds.map(sound => (
+                           <option key={sound} value={`${ALARM_PATH}${sound}`}>{sound.replace(/\.(mp3|wav)$/, '').replace(/_/g, ' ')}</option>
+                         ))}
+                       </select>
+                     </div>
+                   </div>
+                 </div>
+              </div>
+            )}
+
+            {/* Task Management (Removed for now) */}
+            {/* {activeTab === 'tasks' && ( ... )} */}
+
+            {/* Appearance Settings */}
+            {activeTab === 'appearance' && (
+              <div className="space-y-6">
+                <h3 className="text-xl font-bold mb-4">Appearance</h3>
+                <div className="grid grid-cols-3 gap-4">
+                  {themes.map((theme) => (
+                    <div
+                      key={theme}
+                      className={`border-2 rounded-lg p-4 cursor-pointer transition-all ${ // Thicker border
+                        selectedTheme === theme
+                          ? 'border-primary scale-105 shadow-lg' // Enhanced selected style
+                          : 'border-base-300 hover:border-base-content/50'
+                      }`}
+                      data-theme={theme} // Apply theme to preview
+                      onClick={() => setSelectedTheme(theme)}
+                    >
+                      <div className="flex flex-col items-center">
+                        {/* More detailed preview */}
+                        <div className="w-full h-16 rounded mb-2 p-2 bg-base-100 flex flex-col justify-between">
+                           <div className="flex justify-between items-center">
+                             <div className="bg-primary h-2 w-1/4 rounded"></div>
+                             <div className="bg-secondary h-2 w-1/4 rounded"></div>
+                             <div className="bg-accent h-2 w-1/4 rounded"></div>
+                           </div>
+                           <button className="btn btn-xs btn-primary mt-2 self-start">Button</button>
+                        </div>
+                        <span className="text-sm capitalize font-medium text-base-content">{theme}</span> {/* Use base-content color */}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
-        <div className="form-control mb-2">
-          <label className="label"><span className="label-text">Short Break (minutes)</span></label>
-          <input
-            type="number"
-            className="input input-bordered w-full"
-            value={shortBreakMinutes}
-            onChange={(e) => setShortBreakMinutes(Math.max(1, Number(e.target.value)))}
-          />
-        </div>
-
-        <div className="form-control mb-2">
-          <label className="label"><span className="label-text">Long Break (minutes)</span></label>
-          <input
-            type="number"
-            className="input input-bordered w-full"
-            value={longBreakMinutes}
-            onChange={(e) => setLongBreakMinutes(Math.max(1, Number(e.target.value)))}
-          />
-        </div>
-
-        <div className="form-control mb-4">
-          <label className="label"><span className="label-text">Pomodoros before Long Break</span></label>
-          <input
-            type="number"
-            className="input input-bordered w-full"
-            value={longBreakInterval}
-            onChange={(e) => setLongBreakInterval(Math.max(1, Number(e.target.value)))}
-          />
-        </div>
-
-        <div className="form-control mb-4">
-          <label className="label"><span className="label-text">Theme</span></label>
-          <select
-            className="select select-bordered w-full"
-            value={selectedTheme}
-            onChange={(e) => setSelectedTheme(e.target.value)}
-          >
-            {/* テーマ選択肢（変更なし） */}
-            {themes.map((theme) => (
-              <option key={theme} value={theme}>{theme.charAt(0).toUpperCase() + theme.slice(1)}</option>
-            ))}
-          </select>
-        </div>
-
-        {/* 音楽設定セクションを追加 */}
-        <div className="form-control mb-4">
-          <label className="label">
-            <span className="label-text">Focus Music Volume</span>
-            <span className="label-text-alt">{focusMusic.volume}%</span>
-          </label>
-          <input
-            type="range"
-            min="0"
-            max="100"
-            value={focusMusic.volume}
-            onChange={(e) => {
-              const newVolume = Number(e.target.value);
-              setFocusMusic({...focusMusic, volume: newVolume});
-            }}
-            className="range range-primary range-sm"
-          />
-        </div>
-
-        <div className="form-control mb-4">
-          <label className="label">
-            <span className="label-text">Break Music Volume</span>
-            <span className="label-text-alt">{breakMusic.volume}%</span>
-          </label>
-          <input
-            type="range"
-            min="0"
-            max="100"
-            value={breakMusic.volume}
-            onChange={(e) => {
-              const newVolume = Number(e.target.value);
-              setBreakMusic({...breakMusic, volume: newVolume});
-            }}
-            className="range range-primary range-sm"
-          />
-        </div>
-
-        {/* モーダルアクションボタン */}
-        {/* <form method="dialog"> を使っているので、Cancelボタンは不要になるかも */}
-        <div className="modal-action">
-           <form method="dialog" className='flex gap-2'> {/* formで囲む */}
-             {/* Cancelボタンは form method="dialog" で自動的に閉じる */}
-             <button className="btn btn-ghost">Cancel</button>
-             {/* Saveボタンは onClick で処理 */}
-             <button className="btn btn-primary" type="button" onClick={handleSave}>Save</button>
-           </form>
+        {/* Modal Actions */}
+        <div className="modal-action p-4 border-t bg-base-200"> {/* Added background */}
+          <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary" onClick={handleSave}>
+            Save Changes
+          </button>
         </div>
       </div>
-      {/* 背景クリックで閉じるための記述 (daisyUI v4.x) */}
-      {/* <form method="dialog" className="modal-backdrop">
-        <button>close</button>
-      </form> */}
-       {/* daisyUI v5では <dialog> の backdrop クリックで閉じるのがデフォルトのはず */}
     </dialog>
   );
 };
