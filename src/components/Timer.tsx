@@ -1,3 +1,5 @@
+import { useEffect } from 'react';
+
 // App から渡される props の型を定義
 interface TimerProps {
   timeLeft: number; // 残り時間（秒単位）
@@ -9,8 +11,12 @@ export const Timer = ({ timeLeft }: TimerProps) => {
   const minutes = Math.floor(timeLeft / 60); // 例: 1500秒 → 25分
   const seconds = timeLeft % 60;             // 残りの秒（60で割った余り）
 
+  // timeLeft が変更されるたびにドキュメントのタイトルを更新
+  useEffect(() => {
+    document.title = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')} - Pomodoro Timer`;
+  }, [timeLeft, minutes, seconds]);
+
   return (
-    // <div className="text-center">
     <div className="w-full flex justify-center">
       {/* 数字を大きく中央に表示する。daisyUI のテーマカラーに合わせたテキスト色も適用される */}
       <div className="text-8xl sm:text-9xl font-bold tracking-widest text-base-content">
@@ -24,3 +30,5 @@ export const Timer = ({ timeLeft }: TimerProps) => {
 // 🧭 まとめ：daisyUIだけの代表的クラスはこれ！
 // 	•	btn, card, navbar, dropdown, menu, tabs, alert, modal などの部品系
 // 	•	bg-base-*, text-base-content などの自動テーマ調整系
+
+// tracking-widest → 文字の間隔を広げる

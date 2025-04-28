@@ -1,3 +1,6 @@
+// TODO timerのロジックとtaskのロジックをhook に分ける
+// TODO taskコンポーネントをcomponent に分ける
+
 import { useState, useEffect, useCallback } from 'react';
 import { FaPlay, FaPause, FaFastForward } from 'react-icons/fa';
 import { FiRotateCcw, FiSettings } from 'react-icons/fi';
@@ -12,11 +15,12 @@ import { MusicPlayer, MusicSetting } from './components/MusicPlayer';
 import { SettingsModal } from './components/SettingsModal';
 import { UsageCarousel } from './components/UsageCarousel';
 
-// デフォルトの音楽設定 (パスを修正)
+// デフォルトの音楽設定
 const defaultFocusMusicSetting: MusicSetting = { type: 'default', url: '/sounds/ticking/ticking.mp3', volume: 50 };
 const defaultBreakMusicSetting: MusicSetting = { type: 'default', url: '/sounds/ticking/campfire.mp3', volume: 50 };
 
 // デフォルトのアラーム設定 (App内で管理)
+// TODO ローカルストレージから読み込むように変更予定
 const defaultWorkAlarm = '/sounds/alarm/alarm.mp3';
 const defaultShortBreakAlarm = '/sounds/alarm/alarm.mp3';
 const defaultLongBreakAlarm = '/sounds/alarm/alarm.mp3';
@@ -25,6 +29,7 @@ const defaultLongBreakAlarm = '/sounds/alarm/alarm.mp3';
 export const App = () => {
   // --- State ---
   const [mode, setMode] = useState<'work' | 'shortBreak' | 'longBreak'>('work');
+  // TODO ローカルストレージから読み込むように変更予定??? でも現在うまく行ってる？
   const [timeLeft, setTimeLeft] = useState(25 * 60); // 初期値は workMinutes に依存させる
   const [isRunning, setIsRunning] = useState(false);
   // isMuted は MusicPlayer 内部で管理する
@@ -38,6 +43,7 @@ export const App = () => {
   const [longBreakInterval, setLongBreakInterval] = useState(() => Number(localStorage.getItem('longBreakInterval') || 4));
 
   // 音楽設定 (localStorageから読み込む)
+  // TODO youtubeとDefaultの両方を担ってるのが悪さしてる？？？
   const [focusMusic, setFocusMusic] = useState<MusicSetting>(() => {
     const saved = localStorage.getItem('focusMusic');
     return saved ? JSON.parse(saved) : defaultFocusMusicSetting;
@@ -48,7 +54,9 @@ export const App = () => {
   });
 
   // テーマ設定 (localStorageから読み込む)
+  // TODO setCurrentTheme は SettingsModalに渡した方がいいか？
   const [currentTheme, setCurrentTheme] = useState(() => {
+    // 今このコードはブラウザ（クライアント）で実行されているか？
     if (typeof window !== 'undefined') {
       return localStorage.getItem('theme') || 'light';
     }
@@ -60,6 +68,10 @@ export const App = () => {
   const [shortBreakAlarm, setShortBreakAlarm] = useState(() => localStorage.getItem('shortBreakAlarm') || defaultShortBreakAlarm);
   const [longBreakAlarm, setLongBreakAlarm] = useState(() => localStorage.getItem('longBreakAlarm') || defaultLongBreakAlarm);
 
+  // 自動開始設定 (localStorageから読み込む)
+  const [autoStartBreaks, setAutoStartBreaks] = useState(() => localStorage.getItem('autoStartBreaks') === 'true');
+  const [autoStartWork, setAutoStartWork] = useState(() => localStorage.getItem('autoStartWork') === 'true');
+
   // サウンドファイルリスト用ステート
   const [tickingSounds, setTickingSounds] = useState<string[]>([]);
   const [alarmSounds, setAlarmSounds] = useState<string[]>([]);
@@ -67,9 +79,7 @@ export const App = () => {
   // --- サウンドファイルリスト取得 ---
   // このuseEffectはクライアントサイドでのみ実行されるべき
   useEffect(() => {
-    // ここで list_files を使ってファイルリストを取得する想定
-    // 実際のツール呼び出しはできないため、仮のリストを設定
-    // TODO: ツール連携が可能になったら list_files を呼び出す
+    // TODO:ここで list_files を使ってファイルリストを取得する想定
     setTickingSounds([
       'ticking.mp3',
       'campfire.mp3',
@@ -106,6 +116,8 @@ export const App = () => {
   };
 
   // 休憩時間が作業時間以上にならないようにバリデーション
+  // TODO 設定画面じゃなくて直接タイマーの画面に反映されるのよくない
+  // 設定画面で設定できないようにするべき
   useEffect(() => {
     if (shortBreakMinutes >= workMinutes) {
       setShortBreakMinutes(Math.min(5, workMinutes - 1));
@@ -121,14 +133,14 @@ export const App = () => {
     setIsRunning(false);
   }, [mode, workMinutes, shortBreakMinutes, longBreakMinutes, getDurationForMode]);
 
-  // --- Handlers ---
-
+  // テーマの変更
+  // TODO setCurrentThemeでcurrentThemeの値を更新しないとrunしないが
+  // setCurrentThemeが使用されていないため使われていない？？
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', currentTheme);
     localStorage.setItem('theme', currentTheme);
   }, [currentTheme]);
 
-  // --- Handlers --- (getDurationForMode moved above)
 
   // 自動モード切り替え
   const handleAutoSwitch = useCallback(() => {
@@ -140,28 +152,22 @@ export const App = () => {
     } else {
       nextMode = 'work';
     }
-    // Only set the mode here. The useEffect above will handle setting timeLeft.
     setMode(nextMode);
-  }, [mode, pomodoroCount, longBreakInterval]); // Removed getDurationForMode dependency
+  }, [mode, pomodoroCount, longBreakInterval]);
 
   useEffect(() => {
-    // タイトル更新 (変更なし)
-    document.title = `${Math.floor(timeLeft / 60)}:${String(timeLeft % 60).padStart(2, '0')} - Pomodoro Timer`;
-  }, [timeLeft]);
-
-  useEffect(() => {
-    // タイマー実行ロジック (変更なし、handleAutoSwitchが上で定義されたのでOK)
+    // タイマー実行ロジック
     if (!isRunning) return;
+    // setIntervalは「一定時間ごとに指定した関数を繰り返し実行する」組み込み関数
     const interval = setInterval(() => {
       setTimeLeft(prev => {
         if (prev <= 1) {
           // タイマー終了時の処理
           console.log("Timer finished!");
-          // タイマー終了時の処理
-          console.log("Timer finished!");
           // アラーム音再生
           let alarmSound = '';
           switch (mode) {
+            // TODO たぶんここアラームずれてる
             case 'work': alarmSound = shortBreakAlarm; break; // 作業終了時は休憩開始のアラーム
             case 'shortBreak': alarmSound = workAlarm; break; // 短休憩終了時は作業開始のアラーム
             case 'longBreak': alarmSound = workAlarm; break; // 長休憩終了時は作業開始のアラーム
@@ -177,8 +183,9 @@ export const App = () => {
         return prev - 1;
       });
     }, 1000);
+    // clearIntervalはsetIntervalを停止する組み込み関数
     return () => clearInterval(interval);
-  }, [isRunning, handleAutoSwitch]); // handleAutoSwitch を依存配列に追加
+  }, [isRunning, handleAutoSwitch]);
 
   // 手動モード切り替え
   const handleModeChange = (newMode: 'work' | 'shortBreak' | 'longBreak') => {
@@ -210,6 +217,9 @@ export const App = () => {
     setWorkAlarm(settings.workAlarm); // 有効化
     setShortBreakAlarm(settings.shortBreakAlarm); // 有効化
     setLongBreakAlarm(settings.longBreakAlarm); // 有効化
+    setAutoStartBreaks(settings.autoStartBreaks); // 自動開始ステートを更新
+    setAutoStartWork(settings.autoStartWork);     // 自動開始ステートを更新
+    setCurrentTheme(settings.theme); // テーマのステートを更新
 
     // Save all settings to localStorage
     localStorage.setItem('workMinutes', settings.workMinutes.toString());
@@ -218,9 +228,12 @@ export const App = () => {
     localStorage.setItem('longBreakInterval', settings.longBreakInterval.toString());
     localStorage.setItem('focusMusic', JSON.stringify(settings.focusMusic));
     localStorage.setItem('breakMusic', JSON.stringify(settings.breakMusic));
-    localStorage.setItem('workAlarm', settings.workAlarm); // 有効化
-    localStorage.setItem('shortBreakAlarm', settings.shortBreakAlarm); // 有効化
-    localStorage.setItem('longBreakAlarm', settings.longBreakAlarm); // 有効化
+    localStorage.setItem('workAlarm', settings.workAlarm);
+    localStorage.setItem('shortBreakAlarm', settings.shortBreakAlarm);
+    localStorage.setItem('longBreakAlarm', settings.longBreakAlarm);
+    localStorage.setItem('autoStartBreaks', String(settings.autoStartBreaks)); // localStorageに保存
+    localStorage.setItem('autoStartWork', String(settings.autoStartWork));     // localStorageに保存
+    // theme は useEffect で保存されるのでここでは不要
     setShowSettings(false);
   };
 
@@ -240,6 +253,10 @@ export const App = () => {
   const [newTask, setNewTask] = useState('');
 
   // タスク操作関数
+  // TODO タイマーと連動するように編集
+
+
+  // タスクの追加
   const addTask = () => {
     if (newTask.trim()) {
       setTasks([...tasks, {
@@ -251,12 +268,15 @@ export const App = () => {
     }
   };
 
+  // タスクの削除
   const deleteTask = (id: string) => {
+    // 	tasksからid が一致しないものを残す
     setTasks(tasks.filter(task => task.id !== id));
   };
 
+  // タスクの「完了・未完了」を切り替える
   const toggleTask = (id: string) => {
-    setTasks(tasks.map(task => 
+    setTasks(tasks.map(task =>
       task.id === id ? {...task, completed: !task.completed} : task
     ));
   };
@@ -266,11 +286,11 @@ export const App = () => {
     <div className="min-h-screen bg-base-200">
       <div className="container mx-auto px-4 py-8 max-w-2xl">
 
-        {/* ナビゲーションバー (変更なし) */}
+        {/* ナビゲーションバー */}
         <div className="navbar bg-base-100 rounded-box shadow-lg mb-8">
           <div className="flex-1 flex items-center">
-            <img src="/favicon.svg" alt="logo" className='w-5 h-5 cursor-pointer' onClick={() => window.location.reload()} /> {/* public/ を削除 */}
-            <span className="px-2 text-xl cursor-pointer" onClick={() => window.location.reload()}>Pomodoro Timer</span> {/* Method を削除 */}
+            <img src="/favicon.svg" alt="logo" className='w-5 h-5 cursor-pointer' onClick={() => window.location.reload()} />
+            <span className="px-2 text-xl cursor-pointer" onClick={() => window.location.reload()}>Pomodoro Timer</span>
           </div>
           <div className="flex-none">
             <button onClick={() => setShowSettings(true)} className="btn btn-ghost btn-circle" title="Settings">
@@ -279,7 +299,7 @@ export const App = () => {
           </div>
         </div>
 
-        {/* タイマーカード (変更なし) */}
+        {/* タイマーカード */}
         <div className="card bg-base-100 shadow-xl p-8 mb-8">
           <div className="flex flex-wrap justify-center gap-2 mb-8">
             {Object.entries(modes).map(([key, value]) => (
@@ -299,6 +319,7 @@ export const App = () => {
             <button
               onClick={() => setIsRunning(!isRunning)}
               className="btn btn-circle btn-lg btn-outline"
+              title={isRunning ? 'Pause Timer' : 'Start Timer'}
             >
               {isRunning ? <FaPause size={24} /> : <FaPlay size={24} />}
             </button>
@@ -327,7 +348,6 @@ export const App = () => {
           </div>
         </div>
 
-        {/* MusicPlayer に新しい props を渡す */}
         <MusicPlayer
           mode={mode}
           shouldPlay={isRunning}
@@ -347,7 +367,7 @@ export const App = () => {
                 placeholder="Add a new task"
                 value={newTask}
                 onChange={(e) => setNewTask(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && addTask()}
+                onKeyDown={(e) => e.key === 'Enter' && addTask()}
               />
               <button className="btn btn-primary" onClick={addTask}>
                 Add
@@ -406,6 +426,9 @@ export const App = () => {
         longBreakAlarm={longBreakAlarm}
         tickingSounds={tickingSounds}
         alarmSounds={alarmSounds}
+        initialAutoStartBreaks={autoStartBreaks} // props を渡す
+        initialAutoStartWork={autoStartWork}     // props を渡す
+        currentTheme={currentTheme}
       />
     </div>
   );

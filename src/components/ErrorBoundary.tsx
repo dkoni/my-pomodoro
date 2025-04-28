@@ -1,46 +1,59 @@
-import React, { Component, ErrorInfo, ReactNode } from 'react';
+// ErrorBoundaryは特定のコンポーネントで予期せぬエラーが発生しても、アプリケーション全体が停止するのを防ぎ、代わりにユーザーフレンドリーなメッセージを表示するための「エラー監視・代替表示コンポーネント」
+import { Component, ErrorInfo, ReactNode } from 'react';
 
-    interface Props {
-      children: ReactNode;
-      fallback?: ReactNode; // Optional fallback UI
-    }
+// props（親からもらうデータ）の型定義
+interface Props {
+    children: ReactNode; // 包み込むコンポーネント（子要素）
+    fallback?: ReactNode; // エラーが出た時に見せる特別な画面（オプション）
+}
 
-    interface State {
-      hasError: boolean;
-      error?: Error;
-    }
+// コンポーネント内部で使うstateの型定義
+interface State {
+    hasError: boolean; // エラーが起きたかどうか
+    error?: Error;     // 実際に起きたエラー（開発用）
+}
 
-    class ErrorBoundary extends Component<Props, State> {
-      public state: State = {
+// ErrorBoundaryという名前のクラスコンポーネントを定義
+// staticはインスタンスを作る必要なく使用できる
+export const ErrorBoundary = class extends Component<Props, State> {
+    // 初期のstate（エラーは起きてない）
+    public state: State = {
         hasError: false,
-      };
+    };
 
-      public static getDerivedStateFromError(error: Error): State {
-        // Update state so the next render will show the fallback UI.
+    // 子コンポーネントでエラーが発生した時に呼ばれる特別なメソッド
+    public static getDerivedStateFromError(error: Error): State {
+        // hasErrorをtrueにする → fallbackを表示させる
         return { hasError: true, error };
-      }
+    }
 
-      public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-        // You can also log the error to an error reporting service
+    // 実際にエラーが発生した時にログを出したりできる（ここではconsoleに出してるだけ）
+    public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
         console.error("Uncaught error:", error, errorInfo);
-      }
+    }
 
-      public render() {
+    // コンポーネントの見た目を作るメソッド
+    public render() {
         if (this.state.hasError) {
-          // You can render any custom fallback UI
-          return this.props.fallback || (
-            <div className="text-error p-4 border border-error rounded">
-              <p>Something went wrong with this component.</p>
-              {/* Optionally display error details during development */}
-              {import.meta.env.DEV && this.state.error && (
-                <pre className="text-xs mt-2">{this.state.error.toString()}</pre>
-              )}
-            </div>
-          );
+            // エラーが起きた時の表示
+            return this.props.fallback || (
+                <div className="text-error p-4 border border-error rounded">
+                    <p>Something went wrong with this component.</p>
+                    {/* 開発環境だけエラー詳細を表示する（import.meta.env.DEVはviteで開発モードかどうかの判定） */}
+                    {import.meta.env.DEV && this.state.error && (
+                        <pre className="text-xs mt-2">{this.state.error.toString()}</pre>
+                    )}
+                </div>
+            );
         }
 
+        // エラーがないなら普通に子コンポーネントを表示
         return this.props.children;
-      }
     }
+};
 
-    export default ErrorBoundary;
+/*
+Component	クラスコンポーネントの親クラス
+ErrorInfo	エラーの情報を持つ型
+ReactNode	画面に描画できるもの全般の型(タグ、文字、コンポーネントなど全て描画可能)
+*/
